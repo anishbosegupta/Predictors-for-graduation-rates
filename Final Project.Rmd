@@ -1,0 +1,411 @@
+---
+title: "Final Project"
+author: "Anish Gupta"
+date: "2023-11-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(plm)
+library(lmtest)
+library(ggplot2)
+library(tidyr)
+library(applicable)
+library(corrplot)
+library(lubridate)
+library(stargazer)
+library(Metrics)
+library(car)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+options(scipen=999) 
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#### Read College Completion Datasets
+```{r}
+setwd("C:\\Users\\anish\\Documents\\Applied Multivariate Methods\\databeats-college-completion\\databeats-college-completion\\data")
+
+institution_details <- read_csv("cc_institution_details.csv")
+
+institution_grads <- read_csv("cc_institution_grads.csv")
+
+```
+
+#### Data Wrangling for institution_details
+```{r}
+#From the institution details dataframe, filter and keep 4-year institutions.
+four_year_institution_details <- institution_details %>%
+  filter(level == "4-year")
+
+#Check to see if the control binary variable is Public, then assign a value of 1, else assign a value of 2.
+four_year_institution_details$control_public_private = ifelse(four_year_institution_details$control == "Public", 1, 2)
+
+dim(four_year_institution_details)
+four_year_institution_details %>%
+  summarise(sum_grad_100_value = sum(is.na(grad_100_value)),
+            sum_grad_150_value = sum(is.na(grad_150_value)),
+            sum_med_sat_value = sum(is.na(med_sat_value)),
+            sum_aid_value = sum(is.na(aid_value)),
+            sum_pell_percentile = sum(is.na(pell_percentile)),
+            sum_retain_percentile = sum(is.na(retain_percentile)),
+            sum_ft_pct = sum(is.na(ft_pct)),
+            sum_endow_value = sum(is.na(endow_value)),
+            sum_fte_percentile = sum(is.na(fte_percentile)),
+            sum_awards_per_state_value = sum(is.na(awards_per_state_value)),
+            sum_awards_per_natl_value = sum(is.na(awards_per_natl_value)),
+            sum_control_public_private = sum(is.na(control_public_private)))
+```
+
+#### Create a subset of the necessary variables and drop med_sat_value, endow_value.
+```{r}
+four_year_institution_details_subset <- four_year_institution_details %>%
+  select(unitid, grad_100_value, grad_150_value, control_public_private, aid_value, pell_percentile, retain_percentile, ft_pct, fte_percentile, awards_per_state_value,awards_per_natl_value)
+
+dim(four_year_institution_details_subset)
+```
+
+#### Drop remaining rows with NA values
+```{r}
+#For this project, drop the NA values.
+clean_four_year_institution_details <- four_year_institution_details_subset %>% drop_na()
+
+dim(clean_four_year_institution_details)
+```
+#### Wrangle institution_grads
+```{r}
+#table(institution_grads$cohort)
+
+institution_grads %>%
+  summarise(sum_institution_grads_year = sum(is.na(year)),
+            sum_institution_grads_gender = sum(is.na(gender)),
+            sum_institution_grads_race = sum(is.na(race))
+            )
+
+#Filter for Bachelor's/equivalent-seeking cohort at 4-year institutions
+four_year_institution_grads <- institution_grads %>%
+  filter(cohort == "4y bach",
+         gender != "B",
+         race != "X")
+four_year_institution_grads <- four_year_institution_grads %>% 
+  group_by(unitid) %>% 
+  filter(year == max(year))
+
+#Create a subset of the necessary variables.
+four_year_institution_grads_subset <- four_year_institution_grads %>%
+  select(unitid, gender, race, grad_cohort)
+
+#For this project, drop the NA values.
+clean_four_year_institution_grads <- four_year_institution_grads_subset %>% drop_na()
+
+clean_four_year_institution_grads_percent <- clean_four_year_institution_grads %>%
+  group_by(unitid) %>%
+  mutate(grad_cohort_percent = (grad_cohort / sum(grad_cohort))*100)
+
+```
+
+
+
+```{r}
+institution_grad_details <- clean_four_year_institution_details %>% left_join( clean_four_year_institution_grads_percent, 
+        by=c('unitid'='unitid'))
+
+summary(institution_grad_details)
+institution_grad_details <- institution_grad_details %>% drop_na()
+summary(institution_grad_details)
+stargazer(as.data.frame(institution_grad_details),header=FALSE, type = 'text')
+
+```
+
+
+#### Pivot the merged dataframe wider
+```{r}
+institution_grad_details_wider <- institution_grad_details %>% 
+ select(-grad_cohort) %>%
+  pivot_wider(
+    names_from = c(gender, race), 
+    values_from = grad_cohort_percent
+  )
+
+```
+
+#### Examine the data and run summary statistics
+```{r}
+summary(institution_grad_details_wider)
+stargazer(as.data.frame(institution_grad_details_wider), median = TRUE, type = 'text')
+sum(is.na(institution_grad_details_wider))
+```
+```{r}
+plot(institution_grad_details_wider$grad_100_value,institution_grad_details_wider$aid_value )
+plot(institution_grad_details_wider$grad_150_value,institution_grad_details_wider$aid_value )
+plot(institution_grad_details_wider$grad_100_value,institution_grad_details_wider$retain_percentile)
+plot(institution_grad_details_wider$grad_150_value,institution_grad_details_wider$retain_percentile)
+plot(institution_grad_details_wider$grad_100_value,institution_grad_details_wider$ft_pct)
+plot(institution_grad_details_wider$grad_150_value,institution_grad_details_wider$ft_pct)
+plot(institution_grad_details_wider$grad_100_value,institution_grad_details_wider$fte_percentile)
+plot(institution_grad_details_wider$grad_150_value,institution_grad_details_wider$fte_percentile)
+plot(institution_grad_details_wider$grad_100_value,institution_grad_details_wider$awards_per_state_value)
+plot(institution_grad_details_wider$grad_150_value,institution_grad_details_wider$awards_per_state_value)
+plot(institution_grad_details_wider$grad_100_value,institution_grad_details_wider$awards_per_natl_value)
+plot(institution_grad_details_wider$grad_150_value,institution_grad_details_wider$awards_per_natl_value)
+
+```
+
+#### Create Histogram for grad_100_value and grad_150_value and all other variables
+```{r}
+hist(institution_grad_details_wider$grad_100_value)
+hist(institution_grad_details_wider$grad_150_value)
+
+ggplot(gather(institution_grad_details_wider[,-1]), aes(value)) +
+  geom_histogram(bins = 10) +
+  facet_wrap(~key, scales = "free_x")
+```
+```{r}
+hist(log(institution_grad_details_wider$grad_100_value))
+hist(institution_grad_details_wider$aid_value, breaks = 100)
+hist(log(institution_grad_details_wider$aid_value), breaks = 100)
+hist(institution_grad_details_wider$F_A, breaks = 100)
+hist(institution_grad_details_wider$F_Ai, breaks = 100)
+hist(institution_grad_details_wider$F_B, breaks = 100)
+hist(institution_grad_details_wider$F_H, breaks = 100)
+hist(institution_grad_details_wider$M_A, breaks = 100)
+hist(institution_grad_details_wider$M_Ai, breaks = 100)
+hist(institution_grad_details_wider$M_B, breaks = 100)
+hist(institution_grad_details_wider$M_H, breaks = 100)
+```
+
+The distribution for the four year graduation is slightly right-skewed. It also has an outlier where a small number of schools the four year graduation rate is more than 80%. A log transformation here might be helpful.
+Upon log transformation we see that the variable becomes left skewed and therefore it will not be useful.
+
+The distribution for the six year graduation is normal. 
+
+
+The F_A, F_Ai, F_B, M_A, M_Ai, M_B, F_H, M_H are zero inflated distributions and a log transformation will not help here.
+
+aid_value is not zero inflated distribution and therefore may benefit from log transformation.
+Upon log transformation we see that the variable is now more normally distributed than before.
+
+aid_value will be log transformed in the analysis
+
+
+#### Boxplot for grad_100_value and grad_150_value
+```{r}
+boxplot(institution_grad_details_wider$grad_100_value)
+boxplot(institution_grad_details_wider$grad_150_value)
+```
+
+#### The boxplot for the four year graduation rate has a couple of outliers.
+
+#### The boxplot for the six year graduation rate is normally distributed and contains no outliers.
+
+#### Correlation Matrix
+```{r}
+#glimpse(institution_grad_details_wider)
+cor_matrix <- cor(institution_grad_details_wider[,c(-1,-10,-11)])
+cor_matrix
+
+corrplot(cor(institution_grad_details_wider[,c(-1,-10,-11)]))
+```
+
+
+#### Run the first multiple linear regression model for 4-year graduation with all variables
+```{r}
+# Log transform the variables
+institution_grad_details_wider$ln_aid_value <-log(institution_grad_details_wider$aid_value)
+
+model_1 <- lm(grad_100_value~control_public_private+ln_aid_value+pell_percentile+retain_percentile+ft_pct+fte_percentile+M_W+F_W+M_B+F_B+M_H+F_H+M_Ai+F_Ai+M_A, data = institution_grad_details_wider)
+
+alias(model_1)
+summary(model_1)
+stargazer(model_1, title="Results", align=TRUE,type = "text")
+```
+
+#### Checking the regression assumptions for Model 1 and create histogram
+```{r}
+institution_grad_details_wider$residuals_1 <- residuals(model_1)
+hist(institution_grad_details_wider$residuals_1)
+institution_grad_details_wider$predvals_1<-fitted(model_1)
+plot(institution_grad_details_wider$predvals_1,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$pell_percentile,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$control_public_private,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$ln_aid_value,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$retain_percentile,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$ft_pct,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$fte_percentile,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$M_W,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$F_W,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$M_B,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$F_B,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$M_Ai,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$F_Ai,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$M_A,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$M_H,institution_grad_details_wider$residuals_1)
+plot(institution_grad_details_wider$F_H,institution_grad_details_wider$residuals_1)
+
+vif(model_1)
+stargazer(vif(model_1), title="VIF", type = "text")
+```
+#### Checking to see if a quadratic regression model will improve model fit and will fix heteroskedasticity
+```{r}
+model_1.1 <- lm(grad_100_value~control_public_private+ln_aid_value+pell_percentile+pell_percentile^2+retain_percentile+retain_percentile^2+ft_pct+ft_pct^2+fte_percentile+fte_percentile^2+M_W+F_W+M_B+F_B+M_H+F_H+M_Ai+F_Ai+M_A, data = institution_grad_details_wider)
+
+summary(model_1.1)
+stargazer(model_1.1, title="Results", align=TRUE,type = "text")
+```
+
+#### Checking the regression assumptions for Model 1.1 and create histogram
+```{r}
+institution_grad_details_wider$residuals_1.1 <- residuals(model_1.1)
+hist(institution_grad_details_wider$residuals_1.1)
+institution_grad_details_wider$predvals_1.1<-fitted(model_1.1)
+plot(institution_grad_details_wider$predvals_1.1,institution_grad_details_wider$residuals_1.1)
+vif(model_1.1)
+stargazer(vif(model_1.1), title="VIF", type = "text")
+```
+
+
+
+#### Run the second multiple linear regression model by dropping ln_aid_value, awards_per_natl_value, F_B, M_B, M_Ai, F_Ai, M_A,F_H due to multicolinearity
+```{r}
+model_2 <- lm(grad_100_value~control_public_private+pell_percentile+retain_percentile+ft_pct+fte_percentile+F_W +F_A, data = institution_grad_details_wider)
+summary(model_2)
+stargazer(model_2, title="Results", align=TRUE,type = "text")
+```
+
+#### Checking the regression assumptions for Model 2 and create histogram
+```{r}
+institution_grad_details_wider$residuals_2 <- residuals(model_2)
+hist(institution_grad_details_wider$residuals_2)
+institution_grad_details_wider$predvals_2<-fitted(model_2)
+plot(institution_grad_details_wider$predvals_2,institution_grad_details_wider$residuals_2)
+vif(model_2)
+stargazer(vif(model_2), title="VIF", type = "text")
+```
+#### Multiple Linear Regression for 6-year graduation with all variables
+```{r}
+model_3 <- lm(grad_150_value~control_public_private+ln_aid_value+pell_percentile+retain_percentile+ft_pct+fte_percentile+M_W+F_W+M_B+F_B+M_H+F_H+M_Ai+F_Ai+M_A, data = institution_grad_details_wider)
+summary(model_3)
+stargazer(model_3, title="Results",type = "text")
+```
+#### Hist for model 3
+```{r}
+institution_grad_details_wider$residuals_3 <- residuals(model_3)
+hist(institution_grad_details_wider$residuals_3)
+institution_grad_details_wider$predvals_3<-fitted(model_3)
+plot(institution_grad_details_wider$predvals_3,institution_grad_details_wider$residuals_3)
+vif(model_3)
+stargazer(vif(model_3), title="VIF", type = "text")
+```
+
+#### Run the fourth multiple linear regression model for 6 year graduation by dropping ln_aid_value, F_B, and M_B due to multicolinearity
+```{r}
+model_4 <- lm(grad_150_value~control_public_private+retain_percentile+ft_pct+fte_percentile+M_W+F_W+M_H+F_H+M_Ai+F_Ai+M_A+F_A, data = institution_grad_details_wider)
+summary(model_4)
+stargazer(model_4, title="Results",type = "text")
+```
+
+#### Histogram for model 4
+```{r}
+institution_grad_details_wider$residuals_4 <- residuals(model_4)
+hist(institution_grad_details_wider$residuals_4)
+institution_grad_details_wider$predvals_4<-fitted(model_4)
+plot(institution_grad_details_wider$predvals_4,institution_grad_details_wider$residuals_4)
+vif(model_4)
+stargazer(vif(model_4), title="VIF", type = "text")
+```
+
+#### PCA
+```{r}
+#glimpse(institution_grad_details_wider)
+my_pca <- prcomp(institution_grad_details_wider[,c(-1,-2,-3,-5,-10,-11,-23,-24,-25,-26,-27,-28,-29,-30,-31,-32)], scale = TRUE)
+summary(my_pca)
+```
+Here, only PC1, PC2, PC3, PC4, PC5, PC6, PC7 have an eigenvalue > 1.
+
+
+#### Loading Scores
+```{r}
+loading_scores <- my_pca$rotation
+loading_scores
+```
+
+#### Scree Plot
+```{r}
+var <- my_pca$sdev^2
+
+#in base R
+plot(var, type = "b", lty = 1)
+
+#using ggplot
+qplot(c(1:16), var) +
+  geom_line() +
+  geom_point(aes(size=1))+
+  xlab("Principal Component") +
+  ylab("Eigenvalues") +
+  ggtitle("Scree Plot") #+
+  #ylim(0, 2.5)
+```
+
+#### Scree Plot by bar graph
+```{r}
+#CREATE A SCREE-PLOT OF SHARE OF VARIANCE 
+var_pct <- var/sum(var)*100
+
+#barplot in base R
+barplot(var_pct, main="Scree Plot - Share of Var.",
+        xlab="Principal Components",
+        ylab="Share of Variance Explained")
+```
+
+#### Biplot
+```{r}
+#CREATE BIPLOT FOR PC1 AND PC2
+biplot(my_pca, cex=.4)
+```
+
+#### Present a table of the scores for the first six observations in your original dataset.
+```{r}
+scores <- my_pca$x
+head(scores, n=6)
+```
+
+#### Using these new PCA scores, regress the principal components you elected to retain on your dependent variable from your original dataset.
+```{r}
+scores_combined <- cbind(institution_grad_details_wider,scores)
+
+reg_1 <- lm(grad_100_value ~ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7, data=scores_combined)
+summary(reg_1)
+stargazer(reg_1, title="Results",type = "text")
+
+reg_2 <- lm(grad_150_value ~ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7, data=scores_combined)
+summary(reg_2)
+stargazer(reg_2, title="Results",type = "text")
+```
+```{r}
+scores_combined$residuals_reg_1 <- residuals(reg_1)
+hist(scores_combined$residuals_reg_1)
+scores_combined$predvals_reg_1<-fitted(reg_1)
+plot(scores_combined$predvals_reg_1,scores_combined$residuals_reg_1)
+```
+```{r}
+scores_combined$residuals_reg_2 <- residuals(reg_2)
+hist(scores_combined$residuals_reg_2)
+scores_combined$predvals_reg_2<-fitted(reg_2)
+plot(scores_combined$predvals_reg_2,scores_combined$residuals_reg_2)
+```
+```{r}
+#glimpse(scores_combined)
+scores_combined %>%
+  filter(control_public_private == 2) %>%
+  summarise(median_grad_100_private = median(grad_100_value),
+            median_grad_150_private = median(grad_150_value))
+
+scores_combined %>%
+  filter(control_public_private == 1) %>%
+  summarise(median_grad_100_public = median(grad_100_value),
+            median_grad_150_public = median(grad_150_value))
+```
+
